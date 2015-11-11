@@ -1,0 +1,153 @@
+#lang racket
+(require "accessors.rkt")
+(define alph (string->list "ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+
+(define rotor1 (string->list "EKMFLGDQVZNTOWYHXUSPAIBRCJ"))
+(define rotor2 (string->list "AJDKSIRUXBLHWTMCQGZNPYFVOE"))
+(define rotor3 (string->list "BDFHJLCPRTXVZNYEIWGAKMUSQO"))
+(define rotor4 (string->list "ESOVPZJAYQUIRHXLNFTGKDCMWB"))
+(define rotor5 (string->list "VZBRGITYUPSDNHLXAWMJQOFECK"))
+(define refB (string->list "YRUHQSLDPXNGOKMIEBFZCWVJAT"))
+(define refC (string->list "FVPJIAOYEDRZXWGCTKUQSBNMHL"))
+
+(define rI (list alph 0 (string->list "Q") rotor1 alph))
+(define rII (list alph 0 (string->list "E") rotor2 alph))
+(define rIII (list alph 0 (string->list "V") rotor3 alph))
+(define rIV (list alph 0 (string->list "J") rotor4 alph))
+(define rV (list alph 0 (string->list "Z") rotor5 alph))
+(define rB (list alph 0 (list) refB alph))
+(define rC (list alph 0 (list) refC alph))
+(define a (list alph 0 (list) alph alph)) ;; alphabet as a rotor
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define (get-rotor-alph r) (car r))
+
+(define (get-times-rotated r) (cadr r))
+
+(define (get-rotor-notch r) (caddr r))
+
+(define (get-rotor-encrypt r) (cadddr r))
+
+(define (get-rotor-a r) (car (cddddr r))) ;; get the ground alphabet
+
+(define (set-rotor-a a r)
+  (list (get-rotor-alph r)
+        (get-times-rotated r)
+        (get-rotor-notch r)
+        (get-rotor-encrypt r)
+        a))
+  
+;; when rotor rotates: the times increments by 1, the rotor rotates once
+(define (rotate r) (list (rotate-rotor 1 (get-rotor-alph r))
+                         (modulo (+ 1 (get-times-rotated r)) 26)
+                         (get-rotor-notch r)
+                         (get-rotor-encrypt r)
+                         (get-rotor-a r)))
+
+(define (rotate-times r times) (list
+                                (rotate-rotor times (get-rotor-alph r))
+                                (modulo (+ times (get-times-rotated r)) 26)
+                                (get-rotor-notch r)
+                                (get-rotor-encrypt r)
+                                (get-rotor-a r)))
+
+;; rotating the rotor
+(define (rotate-rotor times rotor)
+  ;; shift it all up one
+  (define (iter times to-shift r)
+    (if (= 0 times) (append r to-shift)
+        (iter (- times 1) (append to-shift (list (car r))) (cdr r))))
+  (iter times (list) rotor))
+
+(define (set-rotor-ground-settings is r1 r2 r3)
+  (let* ((r11 (rotate-times r1 (get-idx-of (car is) (get-rotor-a r1))))
+         (r21 (rotate-times r2 (get-idx-of (cadr is) (get-rotor-a r2))))
+         (r31 (rotate-times r3 (get-idx-of (caddr is) (get-rotor-a r3)))))
+    (list r11 r21 r31)))
+
+;; letter passed in is a char. The plugs are lists of chars
+;; returns a character
+(define (get-plug plugs letter)
+  (define (iter plugs-left)
+    (printf "Plugs-left: ~a\n" plugs-left)
+    (if (empty? plugs-left) letter
+        (let* ((plug (car plugs-left))
+               (first (car plug))
+               (second (cadr plug)))
+          (printf "letter: ~a, plug: ~a, first: ~a, second: ~a\n" letter plug first second)
+          (if (equal? first letter) second
+              (if (equal? second letter) first
+                  (iter (cdr plugs-left)))))))
+  (iter plugs))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; idx is from 1
+(define (get-idx-next-letter-forward r1 r2 idx-letter-r1)
+  (get-alph-idx 
+   (modulo (+ (- idx-letter-r1
+                 (get-times-rotated r1))
+              26
+              (get-times-rotated r2))
+           26)))
+
+;; encryption after the reflector
+(define (get-idx-next-letter-backward r2 r1 idx-letter-r2)
+  (get-alph-idx (modulo (- (+ 
+              idx-letter-r2
+              (get-times-rotated r1))
+             (get-times-rotated r2))
+          26)))
+
+;; idx-prev from 1
+(define (pass-through-rotor-forward r2 idx-prev . rprev)
+  (define r1 (if (empty? rprev) a (car rprev)))
+  (define idx-going-in (- (get-idx-next-letter-forward r1 r2 idx-prev) 1))
+  (define letter-in-r2 (get idx-going-in (get-rotor-a r2)))
+  (define idx-in-alph (get-idx-of letter-in-r2 (get-rotor-a r2)))
+  (define encrypted-letter (get idx-in-alph (get-rotor-encrypt r2)))
+  (+ (get-idx-of encrypted-letter alph) 1))
+
+;; idx is from 1
+(define (pass-through-ref ref rprev idx)
+  (+ 1 (get-idx-of (get (- (get-idx-next-letter-forward rprev ref idx) 1) (get-rotor-encrypt ref)) alph)))
+
+(define (pass-through-rotor-backward r1 idx-r2 . r2)
+  (let ((idx (- (get-idx-next-letter-backward (car r2) r1 idx-r2) 1)))
+    (+ 1 (get-idx-of (get 
+                      (get-idx-of (get idx alph)
+                                  (get-rotor-encrypt r1))
+                      (get-rotor-alph r1))
+                (get-rotor-alph r1)))))
+
+(define (pass-through r1 r2 r3 ref char)
+  (define idx (+ (get-idx-of char alph) 1))
+  (define idx-to-reflector (pass-through-rotor-forward r3
+                                                       (pass-through-rotor-forward
+                                                        r2 
+                                                        (pass-through-rotor-forward r1 idx)
+                                                        r1)
+                                                       r2))
+  (get (- (get-idx-next-letter-backward r1
+                                a 
+                                (pass-through-rotor-backward
+                                 r1
+                                 (pass-through-rotor-backward
+                                  r2
+                                  (pass-through-rotor-backward
+                                   r3
+                                   (pass-through-ref ref r3 idx-to-reflector)
+                                   ref)
+                                  r3)
+                                 r2)) 1)
+       alph))
+  
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(provide rotate-rotor rotate-times get-rotor-encrypt get-rotor-notch get-rotor-alph
+         get-times-rotated rI rII rIII rIV rV rB rC a
+         set-rotor-ground-settings get-plug rotate
+         get-idx-next-letter-backward get-idx-next-letter-forward
+         pass-through-rotor-forward pass-through-ref pass-through-rotor-backward
+         pass-through rotor1 rotor2 rotor3)

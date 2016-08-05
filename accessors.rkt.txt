@@ -1,0 +1,27 @@
+#lang racket
+;; gets letter at a specific index in a sequence of letters
+(define (get idx alphabet)
+  (define (iter count a)
+    (if (= 0 count) (car a) (iter (- count 1) (cdr a))))
+  (iter idx alphabet))
+
+;; the 0th (or 26th) index becomes Z, the first index is A
+(define (get-alph-idx idx-letter)
+  (if (= 0 idx-letter) 26 idx-letter))
+
+;; letter must be a char. Alphabet is a list from a string (list of chars)
+;; gets the index of a specific letter in a sequence of letters
+(define (get-idx-of letter alphabet)
+  (define (iter count a)
+    (if (empty? a) -1
+    (if (equal? (car a) letter)
+        count
+        (iter (+ 1 count) (cdr a)))))
+  (iter 0 alphabet))
+
+(define (convert-to-list-of-chars list-of-strings)
+  (define (iter strings l)
+    (if (empty? strings) l
+        (iter (cdr strings) (append l (list (string->list (car strings)))))))
+  (iter list-of-strings (list)))
+(provide get get-alph-idx get-idx-of convert-to-list-of-chars)
